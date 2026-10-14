@@ -1,0 +1,198 @@
+---
+title: "R Assignment 1"
+author: "Brandon Chen (bc2780)"
+date: "Fall 2026"
+output: html_document
+---
+
+<!--
+HOW TO USE THIS TEMPLATE
+
+1. Save this file and your IPUMS data file (ending in .csv.gz) in the SAME
+   folder. When you knit, R looks for the data file in that folder.
+2. Replace every "Your answer here." with your written answer, and fill in
+   every code chunk marked "Your code here."
+3. Run chunks one at a time with the green arrow at the top right of each
+   chunk. When you are done, click Knit. This creates an HTML file in the
+   same folder as this file.
+4. Open the HTML file in your web browser and print it, choosing
+   "Save as PDF" as the destination. Submit that PDF on Brightspace.
+5. Code that produces an error still appears in the HTML file, with the
+   error message below it. Read through your file before submitting and
+   fix any errors you find.
+
+Anything between the arrows on this page is a comment and will not appear
+in your HTML file.
+-->
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, error = TRUE)
+```
+
+# Loading the data
+
+```{r load}
+library(tidyverse)
+# Replace the file name with the name of your file
+acs <- read_csv("usa_00001.csv")
+```
+
+# Question 1: Your state, age range, and sample
+
+```{r q1-sample}
+# Replace 26 with the first age in your range
+age_min <- 30
+age_max <- age_min + 14
+
+acs <- acs %>%
+  filter(AGE >= age_min, AGE <= age_max,
+         INCWAGE > 0, INCWAGE < 999998) %>%
+  mutate(wage_k = INCWAGE / 1000,
+         educ = case_when(EDUC == 0 ~ 0,
+                          EDUC == 1 ~ 2,
+                          EDUC == 2 ~ 6.5,
+                          EDUC >= 3 ~ EDUC + 6))
+```
+
+**(a)**
+The state that I choose is Alabama because it was first in the list of all the states listed alphabetically. Additionally, Alabama represents a rapidly evolving southern economy that provides an interesting contrast to New York. Rather than being driven by finance or traditional services, Alabama's economy has been transforming into a hub for advanced industries such as automotive manufacturing. 
+
+I chose the age range of 30 to 44 because it represents a mid-career demographic where salaries are generally the most stable and representative of a professional's earning potential. By age 30, most individuals have completed their education and established themselves in their respective fields, minimizing the income volatility associated with entry-level transitions. 
+
+**(b)**
+
+```{r q1b}
+nrow(acs)
+mean(acs$wage_k)
+median(acs$wage_k)
+
+```
+
+There are 6695 people in my sample. The mean of wage_k is 60.537. The median of wage_k is 50. The mean of wage-k is larger because wages are probably more skewed towards the right (Google definition: a probability or frequency distribution where the long tail stretches out toward the right (higher values), while the bulk of the data clusters on the left). In other words, there are probably a small amount of people that earn a lot of money compared to the average person, such as CEOs or successful business owners. There is a lower bound of 0 dollars for the wage a person can earn, but there is no upper bound for a wage that a person can earn. Therefore, it makes more sense that the wages would skew towards the right.  
+
+# Question 2: Choose your omitted variable
+
+```{r q2-vars}
+# Replace SEX == 2 with the condition for the z you chose
+acs <- acs %>% mutate(x = educ, z = as.numeric(CITIZEN %in% c(2, 3)))
+
+# Check: you need at least 50 people with z = 0 and at least 50 with z = 1
+count(acs, z)
+```
+
+**(a)** 
+The z that I choose is Foreign born (naturalized citizen or not a citizen). I find it to be the most interesting, as I think the largest wage gap would exist between someone who is a naturalized citizen (or non-citizen) compared to a US-born citizen. Therefore, I think omitting whether someone is foreign-born will create the largest bias in my dataset.
+
+**(b)** 
+First, it should be noted that z = 1 if the person is naturalized citizen or foreign-born and z = 0 if the person is a US-born citizen. 
+
+I predict that the direction of bias from leaving z out of a regression of wage_k on education will be positive. 
+
+Holding education constant, the relationship between wage (dependent variable) and citizenship (omitted variable) will be negative (beta2) because non-citizens or naturalized citizens (z = 1) are less likely to make more money than US-born citizens (z = 0) based on my personal experiences and due to less opportunities alongside other things. Therefore, I expect people with z = 1 to earn less than people with z = 0. 
+
+The covariance between education (main variable) and citizenship (omitted variable) will also be negative, as non-citizens or naturalized citizens (z = 1) are less likely to pursue higher education compared to US-born citizens (z = 0) due to lack of finances or prior education. Therefore, I expect people with z = 1 to have less education than people with z = 0.  
+
+The bias is equal to Omitted Variable Bias = (Effect of Z on Wage) X (Correlation between Z and Education), where Z is citizenship status. Because negative times negative makes a positive, I think that the direction of the bias will be positive. 
+
+Finally, the first condition for omitted variable bias from lecture is that the omitted variable has a causal impact on the included variable. It is plausible that citizenship status (z) affects education level, as most non-citizens or naturalized citizens rarely consider higher education, as foreign-born individuals (especially non-citizens) often face structural barriers to higher education, such as ineligibility for federal financial aid (like FAFSA) or being charged out-of-state tuition rates. However, I don't think that education affects citizenship status (z). A person's birthplace is permanently determined at birth, meaning education acquired later in life cannot retroactively change whether they were born in the US or abroad. Therefore, there is no risk of reverse causality.
+
+**(c)**
+
+```{r q2c}
+acs %>%
+  group_by(z) %>%
+  summarise(
+    count = n(),
+    mean_wage = mean(wage_k),
+    mean_educ = mean(educ)
+  )
+
+```
+
+The table agrees with my prediction about the relationship between z (citizenship) and education that people with z = 0 have more education than people with z = 1. People with z = 0 (U.S. born citizens) have a higher mean_educ than people with z = 1 (foreign-born or naturalized citizens) by ~0.5. 
+
+However, people with z = 0 (mean_wage is 60.47377 for z = 0) have lower wages than people with z = 1 (mean_wage is 61.63055 for z = 1), which is not what I originally predicted in 2b. I originally predicted that z = 0 will have higher wages than people with z = 1. 
+
+# Question 3: Omitted variable bias
+
+**(a)**
+
+```{r q3a}
+omit_reg <- lm(wage_k ~ x, data = acs)
+summary(omit_reg)
+```
+
+The results are as follows:
+
+wage_k = β0 + β1x + ϵ
+
+The error term ϵ is 0 because the estimated equation represents the expected (or average) wage for a given education level, and by assumption in OLS regression, the expected value of the error term is zero (ϵ = 0).
+
+wage_k = -20.3030 + 5.8870x 
+
+β1 = 5.8870 can be interpreted as education having a positive impact on wages. More specifically, every additional year of education increases yearly wages by 5,887 dollars. 
+
+
+**(b)**
+
+```{r q3b}
+full_reg <- lm(wage_k ~ x + z, data = acs)
+summary(full_reg)
+```
+The results are as follows:
+
+wage_k = β0 + β1x + β2z + ϵ
+
+The error term ϵ is 0 because the estimated equation represents the expected (or average) wage for a given education level and a given citizenship status, and by assumption in OLS regression, the expected value of the error term is zero (ϵ = 0).
+
+wage_k = -20.775 + 5.904x + 4.414z 
+
+The coefficient on x increased compared to Part (a), increasing from 5.8870 to 5.904. This increase could be explained because the omitted variable bias in Part (a) was negative. Omitting citizenship status artificially pulled down the estimated return to education, so adding it back into this full regression removes that downward bias and pushes the coefficient on x up by 0.017.
+
+
+**(c)**
+
+```{r q3c}
+# Estimate the auxiliary regression
+aux_reg <- lm(z ~ x, data = acs)
+summary(aux_reg)
+
+# Extract the specific coefficients needed
+gamma_1 <- coef(aux_reg)["x"]
+beta_2 <- coef(full_reg)["z"]
+
+# Multiply gamma_1 by beta_2 (the bias term)
+bias_calculated <- gamma_1 * beta_2
+bias_calculated
+
+# Compare with the difference between the coefficients on x from (a) and (b)
+delta_1 <- coef(omit_reg)["x"]
+beta_1 <- coef(full_reg)["x"]
+diff_x <- delta_1 - beta_1
+diff_x
+```
+The results are as follows:
+
+z = γ0 + γ1x + ν
+
+Similar to parts (a) and (b), the error term ν is 0 in the estimated equation because OLS assumes that the expected value of the error term is zero (E[ν] = 0). Therefore, when writing the predicted auxiliary equation, the error term drops out because the equation represents the expected (or average) value of z for a given level of education.
+
+z = 0.107028 + -0.003813x
+
+When multiplying the coefficient on x from this auxiliary regression (γ1 = -0.003813) by the coefficient on z from part (b) (β2 = 4.414), the result is -0.01683. This is exactly equal to the difference between the coefficients on x in parts (a) (β1 = 5.8870) and (b) (β1 = 5.904) which is -0.01683, confirming the omitted variable bias formula. 
+
+In other words, $\text{OVB} = (\text{Effect of } z \text{ on wage}) \times (\text{Effect of education on } z)$, or $\text{OVB} = \beta_2 \text{ (from part b)} \times \gamma_1$. Additionally, $\text{OVB} = (\text{Biased Effect of Education}) - (\text{True Effect of Education})$, or OVB = β1 from Part A - β1 from Part B. By proving that $\text{OVB} = (\text{Effect of } z \text{ on wage}) \times (\text{Effect of education on } z)$ and $\text{OVB} = (\text{Biased Effect of Education}) - (\text{True Effect of Education})$ are equal, we confirmed the omitted variable bias formula.
+
+**(d)** 
+My prediction in 2(b) that the direction of bias from leaving z out of a regression of wage_k on education will be positive is incorrect, because the direction of bias from leaving z out of a regression of wage_k on education was negative as shown in 3(c). The part of my reasoning that failed is the part where I stated this in Part 2(b):
+
+"Holding education constant, the relationship between wage (dependent variable) and citizenship (omitted variable) will be negative (beta2) because non-citizens or naturalized citizens (z = 1) are less likely to make more money than US-born citizens (z = 0) based on my personal experiences and due to less opportunities alongside other things. Therefore, I expect people with z = 1 to earn less than people with z = 0."
+
+It was later shown in 2(c) that holding education constant, the relationship between wage (dependent variable) and citizenship (omitted variable) was actually positive rather than negative, which is where my reasoning failed. 
+
+In Alabama, the foreign-born population is relatively small and might be heavily skewed toward specific high-skill, specialized industries (like auto manufacturing, engineering, or medical fields) that actively sponsor visas, which resulted in z = 1 having higher mean wages than z = 0. Therefore, if I were to run the same regression in a very different part of the country where visas are not actively sponsored by employers, I would not expect the same result. Differing local economies and immigration patterns would likely change the sign of the relationship between citizenship and wages from positive to negative as I have originally predicted. 
+
+**(e)** 
+Using my regression from part (b), testing the null hypothesis that the coefficient on x is zero at the 5% significance level yields a t-statistic of 24.394, which I got directly from the output of the 3(b) chunk output. Additionally, the output of the 3(b) chunk output also gives the p-value Pr(>|t|), which is < 2e-16 in this case, which is less than 0.05. Therefore we can reject the null hypothesis that the coefficient on x is zero at the 5% significance. 
+
+Regardless of the result, one variable that is not in your data that could still bias this coefficient on x (effect education has on wage) is family wealth. Family wealth is usually positively correlated with both educational attainment and higher wages. By omitting it, we would cause an upward bias on the education coefficient. 
